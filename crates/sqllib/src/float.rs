@@ -44,6 +44,27 @@ pub fn log10_d(left: F64) -> F64 {
 
 some_polymorphic_function1!(log10, d, F64, F64);
 
+/// Saturating form of `ln_d`: negative infinity, the smallest
+/// DOUBLE, for a negative argument, -0.0 included.
+#[doc(hidden)]
+pub fn ln_d_saturating(left: F64) -> F64 {
+    if left.into_inner().is_sign_negative() {
+        F64::new(f64::NEG_INFINITY)
+    } else {
+        ln_d(left)
+    }
+}
+
+/// Saturating form of `log10_d`, like [`ln_d_saturating`].
+#[doc(hidden)]
+pub fn log10_d_saturating(left: F64) -> F64 {
+    if left.into_inner().is_sign_negative() {
+        F64::new(f64::NEG_INFINITY)
+    } else {
+        log10_d(left)
+    }
+}
+
 #[doc(hidden)]
 #[inline(always)]
 pub fn log_d(left: F64) -> F64 {
@@ -51,6 +72,12 @@ pub fn log_d(left: F64) -> F64 {
 }
 
 some_polymorphic_function1!(log, d, F64, F64);
+
+/// Saturating form of `log_d`, like [`ln_d_saturating`].
+#[doc(hidden)]
+pub fn log_d_saturating(left: F64) -> F64 {
+    ln_d_saturating(left)
+}
 
 fn normalize_zero_d(v: f64) -> f64 {
     if v.is_zero() {
@@ -89,6 +116,17 @@ pub fn log_d_d(left: F64, right: F64) -> F64 {
 }
 
 some_polymorphic_function2!(log, d, F64, d, F64, F64);
+
+/// Saturating form of `log_d_d` in its first argument: negative infinity, the
+/// smallest DOUBLE, for a negative first argument, -0.0 included.
+#[doc(hidden)]
+pub fn log_d_d_saturating(left: F64, right: F64) -> F64 {
+    if left.into_inner().is_sign_negative() {
+        F64::new(f64::NEG_INFINITY)
+    } else {
+        log_d_d(left, right)
+    }
+}
 
 #[doc(hidden)]
 #[inline(always)]
@@ -173,6 +211,18 @@ pub fn sqrt_d(left: F64) -> F64 {
 }
 
 some_polymorphic_function1!(sqrt, d, F64, F64);
+
+/// Saturating form of `sqrt_d`: negative infinity, the smallest
+/// DOUBLE, for a negative argument, whose square root is NaN, the
+/// largest DOUBLE.
+#[doc(hidden)]
+pub fn sqrt_d_saturating(left: F64) -> F64 {
+    if left.into_inner() < 0.0 {
+        F64::new(f64::NEG_INFINITY)
+    } else {
+        sqrt_d(left)
+    }
+}
 
 //////////////////// floor /////////////////////
 
@@ -544,3 +594,30 @@ pub fn finite_or_null_f(value: F32) -> Option<F32> {
 }
 
 some_polymorphic_null_function1!(finite_or_null, f, F32, F32);
+
+#[cfg(test)]
+mod test {
+    use super::{
+        ln_d_saturating, log_d_d_saturating, log_d_saturating, log10_d_saturating,
+        sqrt_d_saturating,
+    };
+    use dbsp::algebra::F64;
+
+    #[test]
+    fn saturating_logarithms() {
+        let minus_infinity = F64::new(f64::NEG_INFINITY);
+        assert_eq!(ln_d_saturating(F64::new(-9.0)), minus_infinity);
+        assert_eq!(ln_d_saturating(F64::new(-0.0)), minus_infinity);
+        assert_eq!(ln_d_saturating(F64::new(0.0)), minus_infinity);
+        assert_eq!(ln_d_saturating(F64::new(1.0)), F64::new(0.0));
+        assert_eq!(log10_d_saturating(F64::new(-1.0)), minus_infinity);
+        assert_eq!(log10_d_saturating(F64::new(100.0)), F64::new(2.0));
+        assert_eq!(log_d_saturating(F64::new(-1.0)), minus_infinity);
+        let two = F64::new(2.0);
+        assert_eq!(log_d_d_saturating(F64::new(-9.0), two), minus_infinity);
+        assert_eq!(log_d_d_saturating(two, two), F64::new(1.0));
+        assert_eq!(sqrt_d_saturating(F64::new(-9.0)), minus_infinity);
+        assert_eq!(sqrt_d_saturating(F64::new(-0.0)), F64::new(-0.0));
+        assert_eq!(sqrt_d_saturating(F64::new(9.0)), F64::new(3.0));
+    }
+}
