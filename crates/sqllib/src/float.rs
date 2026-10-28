@@ -143,6 +143,14 @@ some_polymorphic_function2!(truncate, d, F64, i32, i32, F64);
 
 #[doc(hidden)]
 #[inline(always)]
+pub fn trunc_d_i32(left: F64, right: i32) -> F64 {
+    truncate_d_i32(left, right)
+}
+
+some_polymorphic_function2!(trunc, d, F64, i32, i32, F64);
+
+#[doc(hidden)]
+#[inline(always)]
 pub fn truncate_f_i32(left: F32, right: i32) -> F32 {
     let tens = 10.0_f32.pow(right);
     let mut left = left.into_inner() * tens;
@@ -153,6 +161,14 @@ pub fn truncate_f_i32(left: F32, right: i32) -> F32 {
 }
 
 some_polymorphic_function2!(truncate, f, F32, i32, i32, F32);
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn trunc_f_i32(left: F32, right: i32) -> F32 {
+    truncate_f_i32(left, right)
+}
+
+some_polymorphic_function2!(trunc, f, F32, i32, i32, F32);
 
 #[doc(hidden)]
 #[inline(always)]
