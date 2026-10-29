@@ -10,6 +10,11 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Enterprise (Kubernetes): with the Helm value `mtls.enabled`, the hosts of a
+  multihost pipeline exchange data over TLS.  Each host presents its pipeline
+  certificate and admits only hosts of the same pipeline.  See
+  [Client certificates](/get-started/enterprise/https#client-certificates).
+
 - Behavior change (non-fault-tolerant Kafka output): temporary delivery
   failures are retried without a deadline by default, replacing the former
   five-minute limit. When the broker is down the producer queue fills,
