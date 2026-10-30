@@ -354,14 +354,27 @@ public final class ExpressionOracleHarvest {
     @Nullable
     private static ObjectNode paramSpec(DBSPCompiler compiler, DBSPType type) {
         boolean ref = false;
+        // An optional reference, `Option<&Tup>` (LAG's projection), is sampled as a nullable
+        // tuple and passed with `as_ref()`.
+        boolean optionalRef = false;
         if (type instanceof DBSPTypeRef refType) {
             ref = true;
-            type = refType.type;
+            optionalRef = refType.mayBeNull && refType.type instanceof DBSPTypeTuple inner && !inner.mayBeNull;
+            type = optionalRef ? refType.type.withMayBeNull(true) : refType.type;
         }
         ObjectNode param = MAPPER.createObjectNode();
-        param.put("mode", ref ? "ref" : "value");
+        param.put("mode", optionalRef ? "optref" : ref ? "ref" : "value");
         if (type instanceof DBSPTypeWeight) {
             param.put("kind", "weight");
+            return param;
+        }
+        // A borrowed nullable empty tuple is a left join's right value with no columns: sample
+        // it present and absent, so the closure's `is_none()` sees both.
+        if (type instanceof DBSPTypeTuple tuple && tuple.tupFields.length == 0 && type.mayBeNull && ref) {
+            param.put("kind", "tuple");
+            param.put("nullable", true);
+            param.put("ctor", "Tup0::new()");
+            param.putArray("leaves");
             return param;
         }
         if (type instanceof DBSPTypeTupleBase tuple && tuple.tupFields.length == 0) {
