@@ -1,4 +1,6 @@
+#[cfg(feature = "actix")]
 use actix_web::ResponseError;
+#[cfg(feature = "actix")]
 use actix_web::http::StatusCode;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
@@ -24,7 +26,14 @@ pub struct ErrorResponse {
 
 /// Error trait which internal errors must implement such that it
 /// can be transformed to a complete JSON error response.
+#[cfg(feature = "actix")]
 pub trait DetailedError: StdError + ResponseError + Serialize {
+    /// Identifying name of the error.
+    fn error_code(&self) -> Cow<'static, str>;
+}
+
+#[cfg(not(feature = "actix"))]
+pub trait DetailedError: StdError + Serialize {
     /// Identifying name of the error.
     fn error_code(&self) -> Cow<'static, str>;
 }
@@ -44,6 +53,15 @@ where
 }
 
 impl ErrorResponse {
+    #[cfg(not(feature = "actix"))]
+    pub fn from_error<E>(error: &E) -> Self
+    where
+        E: DetailedError,
+    {
+        Self::from_error_nolog(error)
+    }
+
+    #[cfg(feature = "actix")]
     pub fn from_error<E>(error: &E) -> Self
     where
         E: DetailedError,

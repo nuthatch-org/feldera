@@ -43,14 +43,92 @@ use std::{
         Arc, Mutex, MutexGuard, RwLock,
         atomic::{AtomicIsize, AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
+use crate::wasm_time::Instant;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
     sync::{Notify, OnceCell, mpsc::error::SendError},
-    time::sleep,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::net::{TcpListener, TcpStream};
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::time::sleep;
+// wasm32 spike: tokio's `time` feature builds a clock from `std::time::Instant` in every runtime,
+// which panics on this target, so the feature is off and the one sleep here (a reconnect pause) is
+// a no-op.
+#[cfg(target_arch = "wasm32")]
+use wasm_net::{TcpListener, TcpStream, sleep};
+
+// wasm32 spike: the multihost exchange is never configured in a tab; these let it compile.
+#[cfg(target_arch = "wasm32")]
+mod wasm_net {
+    use std::io;
+    use std::net::SocketAddr;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+    fn unsupported() -> io::Error {
+        io::Error::new(io::ErrorKind::Unsupported, "no sockets on wasm32")
+    }
+
+    pub async fn sleep(_: std::time::Duration) {}
+
+    pub struct TcpStream;
+
+    impl TcpStream {
+        pub async fn connect(_: SocketAddr) -> io::Result<Self> {
+            Err(unsupported())
+        }
+        pub fn set_nodelay(&self, _: bool) -> io::Result<()> {
+            Ok(())
+        }
+        pub fn set_zero_linger(&self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl AsyncRead for TcpStream {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Err(unsupported()))
+        }
+    }
+
+    impl AsyncWrite for TcpStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Ready(Err(unsupported()))
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    pub struct TcpListener;
+
+    impl TcpListener {
+        pub fn from_std(_: std::net::TcpListener) -> io::Result<Self> {
+            Err(unsupported())
+        }
+        pub async fn bind(_: SocketAddr) -> io::Result<Self> {
+            Err(unsupported())
+        }
+        pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
+            Err(unsupported())
+        }
+    }
+}
 use tokio_util::sync::{CancellationToken, DropGuard};
 use tracing::{info, warn};
 use typedmap::TypedMapKey;

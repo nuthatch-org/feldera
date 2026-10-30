@@ -51,8 +51,9 @@ use std::{
     panic::Location,
     rc::Rc,
     sync::{Arc, atomic::AtomicU64},
-    time::{Duration, Instant},
+    time::Duration,
 };
+use crate::wasm_time::Instant;
 use tracing::info;
 
 circuit_cache_key!(BalancedTraceId<C: Circuit, B: IndexedZSet>(StreamId => (Stream<C, Option<Spine<B>>>, Stream<C, TimedSpine<B, C>>)));

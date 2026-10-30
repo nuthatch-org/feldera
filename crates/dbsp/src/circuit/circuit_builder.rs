@@ -59,6 +59,7 @@ use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_samply::Span;
 use feldera_storage::{FileCommitter, StoragePath};
 use itertools::Itertools;
+#[cfg(unix)]
 use nix::{
     sys::time::TimeValLike,
     time::{ClockId, clock_gettime},
@@ -83,8 +84,9 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
     thread::panicking,
-    time::{Duration, Instant},
+    time::Duration,
 };
+use crate::wasm_time::Instant;
 use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
 use tracing::debug;
 use typedmap::{TypedMap, TypedMapKey};
@@ -7985,6 +7987,12 @@ pub struct ThreadCpuTime(pub Duration);
 
 impl ThreadCpuTime {
     /// Returns the current time elapsed running the current thread.
+    #[cfg(not(unix))]
+    pub fn now() -> Self {
+        Self(Duration::ZERO)
+    }
+
+    #[cfg(unix)]
     pub fn now() -> Self {
         let nanos = clock_gettime(ClockId::CLOCK_THREAD_CPUTIME_ID)
             .unwrap()

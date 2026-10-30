@@ -1,7 +1,10 @@
 use crate::checkpoint::CheckpointMetadata;
 use crate::error::ErrorResponse;
+#[cfg(feature = "actix")]
 use actix_web::body::BoxBody;
+#[cfg(feature = "actix")]
 use actix_web::http::StatusCode;
+#[cfg(feature = "actix")]
 use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, Responder, ResponseError};
 use bytemuck::NoUninit;
 use clap::ValueEnum;
@@ -287,6 +290,7 @@ pub struct ExtendedRuntimeStatus {
     pub storage_status_details: Option<StorageStatusDetails>,
 }
 
+#[cfg(feature = "actix")]
 impl Responder for ExtendedRuntimeStatus {
     type Body = BoxBody;
 
@@ -295,6 +299,7 @@ impl Responder for ExtendedRuntimeStatus {
     }
 }
 
+#[cfg(feature = "actix")]
 impl From<ExtendedRuntimeStatus> for HttpResponse<BoxBody> {
     fn from(value: ExtendedRuntimeStatus) -> Self {
         HttpResponseBuilder::new(StatusCode::OK).json(value)
@@ -302,6 +307,15 @@ impl From<ExtendedRuntimeStatus> for HttpResponse<BoxBody> {
 }
 
 /// Error returned by the pipeline `/status` endpoint.
+#[cfg(not(feature = "actix"))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ExtendedRuntimeStatusError {
+    /// The HTTP status as a number, since the type behind it is actix's.
+    pub status_code: u16,
+    pub error: ErrorResponse,
+}
+
+#[cfg(feature = "actix")]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExtendedRuntimeStatusError {
     /// Status code. Returning anything except `503 Service Unavailable` will cause the runner to
@@ -313,6 +327,7 @@ pub struct ExtendedRuntimeStatusError {
     pub error: ErrorResponse,
 }
 
+#[cfg(feature = "actix")]
 mod status_code {
     use actix_web::http::StatusCode;
     use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
@@ -333,12 +348,14 @@ mod status_code {
     }
 }
 
+#[cfg(feature = "actix")]
 impl Display for ExtendedRuntimeStatusError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {:?}", self.status_code, self.error)
     }
 }
 
+#[cfg(feature = "actix")]
 impl ResponseError for ExtendedRuntimeStatusError {
     fn status_code(&self) -> StatusCode {
         self.status_code

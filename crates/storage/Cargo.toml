@@ -52,21 +52,27 @@ version = "0.2.153"
 
 [dependencies.object_store]
 version = "0.12.1"
-features = [
-    "aws",
-    "gcp",
-    "azure",
-    "http",
-]
+default-features = false
 
 [dependencies.once_cell]
 version = "1.20.2"
 
-[dependencies.rkyv]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.rkyv]
 version = "0.7.45"
 features = [
     "std",
     "size_64",
+    "validation",
+    "uuid",
+]
+default-features = false
+
+# wasm32 spike: rkyv 0.7 only implements `Offset` for i64 on 64-bit targets, so archived sizes are 32-bit here.
+[target.'cfg(target_arch = "wasm32")'.dependencies.rkyv]
+version = "0.7.45"
+features = [
+    "std",
+    "size_32",
     "validation",
     "uuid",
 ]
@@ -91,12 +97,20 @@ package = "feldera-size-of"
 [dependencies.thiserror]
 version = "2"
 
-[dependencies.tokio]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio]
 version = "1.50.0"
 features = [
     "macros",
     "rt",
     "rt-multi-thread",
+]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.tokio]
+version = "1.50.0"
+features = [
+    "macros",
+    "rt",
+    "sync",
 ]
 
 [dependencies.tracing]
@@ -116,3 +130,7 @@ features = [
     "feature",
     "fs",
 ]
+
+# wasm32 spike: std::time::Instant panics on wasm32-unknown-unknown; web-time reads performance.now().
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-time]
+version = "1.1"

@@ -49,8 +49,9 @@ use std::{
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
     thread::JoinHandle,
-    time::{Duration, Instant},
+    time::Duration,
 };
+use crate::wasm_time::Instant;
 
 #[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -62,7 +63,7 @@ use flate2::{
 };
 use itertools::Itertools;
 use memory_stats::memory_stats;
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 use nix::time::{ClockId, clock_gettime};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -144,7 +145,12 @@ impl Timestamp {
             Self(mach_absolute_time_nanos())
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(unix))]
+        {
+            Self(0)
+        }
+
+        #[cfg(all(unix, not(target_os = "macos")))]
         {
             let now = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
             Self(now.tv_sec() as i64 * 1_000_000_000 + now.tv_nsec() as i64)
@@ -713,7 +719,7 @@ impl Capture {
                 tooltip,
             };
             markers
-                .entry(nix::unistd::getpid().as_raw() as usize)
+                .entry(current_pid())
                 .or_default()
                 .1
                 .0
@@ -1235,6 +1241,16 @@ struct ThreadMarkers {
     queue: Arc<Queue>,
 }
 
+#[cfg(unix)]
+fn current_pid() -> usize {
+    nix::unistd::getpid().as_raw() as usize
+}
+
+#[cfg(not(unix))]
+fn current_pid() -> usize {
+    0
+}
+
 impl ThreadMarkers {
     fn new(queue: Arc<Queue>) -> Self {
         #[cfg(target_os = "linux")]
@@ -1400,4 +1416,14 @@ impl Queue {
 
 thread_local! {
     static QUEUE: Arc<Queue> = Queue::new();
+}
+
+// wasm32 spike: one Instant for both targets.
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod wasm_time {
+    pub use web_time::Instant;
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod wasm_time {
+    pub use std::time::Instant;
 }

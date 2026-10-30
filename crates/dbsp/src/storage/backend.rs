@@ -15,6 +15,7 @@ use tempfile::TempDir;
 use tracing::warn;
 
 pub mod memory_impl;
+#[cfg(unix)]
 pub mod posixio_impl;
 
 #[cfg(test)]

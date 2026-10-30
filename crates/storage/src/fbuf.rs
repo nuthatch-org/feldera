@@ -19,12 +19,14 @@ use std::{
     io::{self, Error as IoError, ErrorKind, Read},
     mem,
     ops::{Deref, DerefMut, Index, IndexMut},
-    os::fd::AsRawFd,
     ptr::NonNull,
     slice,
 };
 
+#[cfg(unix)]
 use libc::c_void;
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 use rkyv::{
     Archive, Archived, Serialize,
     ser::{ScratchSpace, Serializer},
@@ -552,6 +554,7 @@ impl FBuf {
     /// this `FBuf`.
     ///
     /// This avoids zero-initializing the buffer before reading into it.
+    #[cfg(unix)]
     pub fn read_exact_at(
         &mut self,
         file: &File,

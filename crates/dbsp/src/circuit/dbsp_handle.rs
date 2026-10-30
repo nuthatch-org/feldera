@@ -36,8 +36,8 @@ use std::{
     ops::Range,
     path::{Path, PathBuf},
     thread::Result as ThreadResult,
-    time::Instant,
 };
+use crate::wasm_time::Instant;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -679,7 +679,7 @@ impl Runtime {
         // to us via this channel.  The function returns after receiving a
         // notification from each worker.
         let (init_senders, init_receivers): (Vec<_>, Vec<_>) =
-            (0..nworkers).map(|_| bounded(0)).unzip();
+            (0..nworkers).map(|_| bounded(if cfg!(target_arch = "wasm32") { 1 } else { 0 })).unzip();
 
         // Channels used to send commands to workers.
         let (command_senders, command_receivers): (Vec<_>, Vec<_>) =
@@ -717,35 +717,39 @@ impl Runtime {
                 }
             };
 
-            while !Runtime::kill_in_progress() {
-                // Wait for command.
+            // wasm32 spike: one command at a time, so the client thread can run this itself.
+            // `Some(true)` handled a command, `Some(false)` found none, `None` means exit.
+            let mut serve_one = move || -> Option<bool> {
+                if Runtime::kill_in_progress() {
+                    return None;
+                }
                 match command_receiver.try_recv() {
                     Ok(Command::Transaction) => {
                         let status = circuit.transaction().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::StartTransaction) => {
                         let status = circuit.start_transaction().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::CommitTransaction) => {
                         let status = circuit.start_commit_transaction().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::CommitProgress) => {
                         let status = Ok(Response::CommitProgress(circuit.commit_progress()));
                         // Send response.
                         if status_sender.send(status).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::Step) => {
@@ -754,7 +758,7 @@ impl Runtime {
                             .map(|_| Response::CommitComplete(circuit.is_commit_complete()));
                         // Send response.
                         if status_sender.send(status).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::IsBootstrapComplete) => {
@@ -763,20 +767,20 @@ impl Runtime {
                             .send(Ok(Response::BootstrapComplete(complete)))
                             .is_err()
                         {
-                            return;
+                            return None;
                         };
                     }
                     Ok(Command::CompleteBootstrap) => {
                         let status = circuit.complete_replay().map(|_| Response::Unit);
                         if status_sender.send(status).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::EnableProfiler) => {
                         profiler.enable_cpu_profiler();
                         // Send response.
                         if status_sender.send(Ok(Response::Unit)).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::DumpProfile { runtime_elapsed }) => {
@@ -786,7 +790,7 @@ impl Runtime {
                             )))
                             .is_err()
                         {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::RetrieveGraph) => {
@@ -796,7 +800,7 @@ impl Runtime {
                             .send(Ok(Response::ProfileDump(profiler.dump_graph())))
                             .is_err()
                         {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::RetrieveProfile { runtime_elapsed }) => {
@@ -804,7 +808,7 @@ impl Runtime {
                             .send(Ok(Response::Profile(profiler.profile(runtime_elapsed))))
                             .is_err()
                         {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::Checkpoint(base)) => {
@@ -813,25 +817,25 @@ impl Runtime {
                             .checkpoint(&base, &mut files)
                             .map(|_| Response::CheckpointCreated(files));
                         if status_sender.send(response).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::Restore(base)) => {
                         let result = circuit.restore(&base).map(Response::CheckpointRestored);
                         if status_sender.send(result).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::GetLir) => {
                         let lir = circuit.lir();
                         if status_sender.send(Ok(Response::Lir(lir))).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::SetAutoRebalance(enable)) => {
                         let result = circuit.set_auto_rebalance(enable).map(|_| Response::Unit);
                         if status_sender.send(result).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::SetBalancerHintsByGlobalId(hints)) => {
@@ -845,7 +849,7 @@ impl Runtime {
                             .send(Ok(Response::SetBalancerHints(results)))
                             .is_err()
                         {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::SetBalancerHints(hints)) => {
@@ -859,7 +863,7 @@ impl Runtime {
                             .send(Ok(Response::SetBalancerHints(results)))
                             .is_err()
                         {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::GetCurrentBalancerPolicies) => {
@@ -868,7 +872,7 @@ impl Runtime {
                             .send(Ok(Response::CurrentBalancerPolicies(policy)))
                             .is_err()
                         {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::GetCurrentBalancerPolicy(persistent_id)) => {
@@ -877,19 +881,19 @@ impl Runtime {
                             .send(Ok(Response::CurrentBalancerPolicy(policy)))
                             .is_err()
                         {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::Rebalance) => {
                         circuit.rebalance();
                         if status_sender.send(Ok(Response::Unit)).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::StartCompaction) => {
                         circuit.start_compaction();
                         if status_sender.send(Ok(Response::Unit)).is_err() {
-                            return;
+                            return None;
                         }
                     }
                     Ok(Command::IsCompactionComplete) => {
@@ -898,18 +902,29 @@ impl Runtime {
                             .send(Ok(Response::IsCompactionComplete(complete)))
                             .is_err()
                         {
-                            return;
+                            return None;
                         }
                     }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
-                    Err(TryRecvError::Empty) => {
-                        parker.park();
-                    }
-                    Err(_) => {
-                        break;
-                    }
+                    Err(TryRecvError::Empty) => return Some(false),
+                    Err(_) => return None,
                 }
+                Some(true)
+            };
+            #[cfg(not(target_arch = "wasm32"))]
+            loop {
+                match serve_one() {
+                    Some(true) => {}
+                    // Nothing to do: relinquish the CPU until a command arrives.
+                    Some(false) => parker.park(),
+                    None => return,
+                }
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                let _ = parker;
+                crate::circuit::runtime::inline_workers_push(Box::new(move || serve_one()));
             }
         })?;
 
@@ -1212,6 +1227,10 @@ impl DBSPHandle {
             self.runtime.as_ref().unwrap().unpark_worker(worker);
         }
 
+        // wasm32 spike: the workers are closures on this thread; run them now.
+        #[cfg(target_arch = "wasm32")]
+        crate::circuit::runtime::inline_workers_drive();
+
         // Use `Select` to wait for responses from all workers simultaneously.
         // This way if one of the workers panics, leaving other workers waiting
         // for it in exchange operators, we won't deadlock waiting for these
@@ -1265,6 +1284,9 @@ impl DBSPHandle {
             return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
         }
         self.runtime.as_ref().unwrap().unpark_worker(worker);
+
+        #[cfg(target_arch = "wasm32")]
+        crate::circuit::runtime::inline_workers_drive();
 
         let reply = match self.status_receivers[worker].recv() {
             Err(_) => return handle_panic(self),

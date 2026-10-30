@@ -41,6 +41,7 @@ repository = "https://github.com/feldera/feldera"
 resolver = "2"
 
 [features]
+actix = ["dep:actix-web"]
 testing = [
     "proptest",
     "proptest-derive",
@@ -53,6 +54,7 @@ path = "src/lib.rs"
 
 [dependencies.actix-web]
 version = "4.11.0"
+optional = true
 
 [dependencies.anyhow]
 version = "1.0.91"

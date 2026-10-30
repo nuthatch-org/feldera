@@ -2,8 +2,9 @@ use std::{
     collections::VecDeque,
     ops::RangeInclusive,
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::Duration,
 };
+use crate::wasm_time::Instant;
 
 use itertools::Itertools;
 

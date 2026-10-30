@@ -20,6 +20,24 @@ use crate::{
         dirlock::LockedDirectory,
     },
 };
+#[cfg(not(target_arch = "wasm32"))]
+use core_affinity::{CoreId, get_core_ids};
+
+// wasm32 spike: no cores to pin; the same shape so the pinning code compiles unchanged.
+#[cfg(target_arch = "wasm32")]
+mod core_affinity {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct CoreId {
+        pub id: usize,
+    }
+    pub fn get_core_ids() -> Option<Vec<CoreId>> {
+        None
+    }
+    pub fn set_for_current(_: CoreId) -> bool {
+        false
+    }
+}
+#[cfg(target_arch = "wasm32")]
 use core_affinity::{CoreId, get_core_ids};
 use crossbeam::sync::{Parker, Unparker};
 use enum_map::{Enum, EnumMap, enum_map};
@@ -700,8 +718,14 @@ impl Runtime {
         let tokio_merger_runtime: TokioRuntime = {
             info!("starting dbsp merger tokio runtime, workers: {num_merger_threads}",);
 
-            TokioBuilder::new_multi_thread()
-                .worker_threads(num_merger_threads)
+            #[cfg(not(target_arch = "wasm32"))]
+            let mut builder = TokioBuilder::new_multi_thread();
+            #[cfg(not(target_arch = "wasm32"))]
+            builder.worker_threads(num_merger_threads);
+            // wasm32 spike: one thread; merger tasks only run when something drives this runtime.
+            #[cfg(target_arch = "wasm32")]
+            let mut builder = TokioBuilder::new_current_thread();
+            builder
                 .thread_name_fn(|| {
                     use std::sync::atomic::{AtomicUsize, Ordering};
                     static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
@@ -712,10 +736,13 @@ impl Runtime {
                     set_current_thread_type(ThreadType::Background);
                     RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime_clone.clone()));
                 })
-                .thread_stack_size(6 * 1024 * 1024)
-                .enable_all()
-                .build()
-                .unwrap()
+                .thread_stack_size(6 * 1024 * 1024);
+            // wasm32 spike: object_store turns tokio's `time` feature on for the whole tree, and a
+            // time driver reads `std::time::Instant` as it is built, which panics on this target.
+            // Nothing is ever spawned on this runtime there, so it needs no drivers at all.
+            #[cfg(not(target_arch = "wasm32"))]
+            builder.enable_all();
+            builder.build().unwrap()
         };
 
         runtime
@@ -726,6 +753,8 @@ impl Runtime {
             .replace(tokio_merger_runtime);
 
         // Monitor process RSS and update memory pressure.
+        // wasm32 spike: no thread to monitor from, and no RSS to read.
+        #[cfg(not(target_arch = "wasm32"))]
         runtime.spawn_aux_thread("rss-monitor", Parker::new(), |parker| {
             let runtime = Runtime::runtime().unwrap();
 
@@ -802,22 +831,33 @@ impl Runtime {
                     worker_index - runtime.inner().layout.local_workers().start;
                 let fbuf_slab_allocator =
                     runtime.get_fbuf_slab_allocator(local_worker_offset, ThreadType::Foreground);
-                let handle = Builder::new()
-                    .name(format!("dbsp-worker-{worker_index}"))
-                    .spawn(move || {
-                        // Set the worker's runtime handle and index
-                        WORKER_INDEX.set(worker_index);
-                        set_current_thread_type(ThreadType::Foreground);
-                        set_thread_slab_pool(Some(fbuf_slab_allocator));
-                        runtime.inner().pin_cpu();
-                        RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
+                let body = move || {
+                    // Set the worker's runtime handle and index
+                    WORKER_INDEX.set(worker_index);
+                    set_current_thread_type(ThreadType::Foreground);
+                    set_thread_slab_pool(Some(fbuf_slab_allocator));
+                    runtime.inner().pin_cpu();
+                    RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
 
-                        // Build the worker's circuit
-                        build_circuit(parker);
-                    })
-                    .unwrap_or_else(|error| {
-                        panic!("failed to spawn worker thread {worker_index}: {error}");
-                    });
+                    // Build the worker's circuit
+                    build_circuit(parker);
+                };
+                #[cfg(not(target_arch = "wasm32"))]
+                let handle = Some(
+                    Builder::new()
+                        .name(format!("dbsp-worker-{worker_index}"))
+                        .spawn(body)
+                        .unwrap_or_else(|error| {
+                            panic!("failed to spawn worker thread {worker_index}: {error}");
+                        }),
+                );
+                // wasm32 spike: the calling thread is the worker. The body builds the circuit and
+                // registers a closure that serves one command at a time (see `init_circuit`).
+                #[cfg(target_arch = "wasm32")]
+                let handle = {
+                    body();
+                    None
+                };
                 (handle, unparker)
             })
             .collect::<Vec<_>>();
@@ -1440,11 +1480,43 @@ where
 #[derive(Debug)]
 pub struct RuntimeHandle {
     runtime: Runtime,
-    workers: Vec<(JoinHandle<()>, Unparker)>,
+    workers: Vec<(Option<JoinHandle<()>>, Unparker)>,
+}
+
+/// wasm32 spike: the workers of every circuit built on this thread, each a closure that serves
+/// one queued command and answers whether it did (`Some(true)`), found none (`Some(false)`) or
+/// has exited (`None`).
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static INLINE_WORKERS: RefCell<Vec<Box<dyn FnMut() -> Option<bool>>>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn inline_workers_push(worker: Box<dyn FnMut() -> Option<bool>>) {
+    INLINE_WORKERS.with(|w| w.borrow_mut().push(worker));
+}
+
+/// Serve every queued command on every inline worker, dropping workers that have exited.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn inline_workers_drive() {
+    let mut workers = INLINE_WORKERS.with(|w| std::mem::take(&mut *w.borrow_mut()));
+    workers.retain_mut(|serve| loop {
+        match serve() {
+            Some(true) => {}
+            Some(false) => break true,
+            None => break false,
+        }
+    });
+    INLINE_WORKERS.with(|w| {
+        let mut w = w.borrow_mut();
+        workers.append(&mut w);
+        *w = workers;
+    });
 }
 
 impl RuntimeHandle {
-    fn new(runtime: Runtime, workers: Vec<(JoinHandle<()>, Unparker)>) -> Self {
+    fn new(runtime: Runtime, workers: Vec<(Option<JoinHandle<()>>, Unparker)>) -> Self {
         Self { runtime, workers }
     }
 
@@ -1506,7 +1578,7 @@ impl RuntimeHandle {
         let results: Vec<ThreadResult<()>> = self
             .workers
             .into_iter()
-            .map(|(h, _unparker)| h.join())
+            .map(|(h, _unparker)| h.map(|h| h.join()).unwrap_or(Ok(())))
             .collect();
 
         // Once all fg threads have terminated, signal the aux threads to terminate as well.

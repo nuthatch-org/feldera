@@ -205,7 +205,7 @@ features = [
     "wrap_help",
 ]
 
-[dependencies.core_affinity]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.core_affinity]
 version = "0.8.1"
 
 [dependencies.crc32c]
@@ -240,7 +240,7 @@ version = "2.7.3"
 [dependencies.fastbloom]
 version = "0.14.0"
 
-[dependencies.fdlimit]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.fdlimit]
 version = "0.3.0"
 
 [dependencies.feldera-buffer-cache]
@@ -295,10 +295,10 @@ features = ["always_use_statm"]
 [dependencies.metrics]
 version = "0.23.0"
 
-[dependencies.mimalloc-rust-sys]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.mimalloc-rust-sys]
 version = "1.7.2"
 
-[dependencies.nix]
+[target.'cfg(unix)'.dependencies.nix]
 version = "0.29.0"
 features = [
     "process",
@@ -320,11 +320,18 @@ version = "0.2.19"
 [dependencies.once_cell]
 version = "1.20.2"
 
-[dependencies.ordered-float]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.ordered-float]
 version = "4.2.0"
 features = [
     "serde",
     "rkyv_64",
+]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.ordered-float]
+version = "4.2.0"
+features = [
+    "serde",
+    "rkyv_32",
 ]
 
 [dependencies.ouroboros]
@@ -348,11 +355,22 @@ version = "0.8.6"
 [dependencies.rand_chacha]
 version = "0.3.1"
 
-[dependencies.rkyv]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.rkyv]
 version = "0.7.45"
 features = [
     "std",
     "size_64",
+    "validation",
+    "uuid",
+]
+default-features = false
+
+# wasm32 spike: rkyv 0.7 only implements `Offset` for i64 on 64-bit targets, so archived sizes are 32-bit here.
+[target.'cfg(target_arch = "wasm32")'.dependencies.rkyv]
+version = "0.7.45"
+features = [
+    "std",
+    "size_32",
     "validation",
     "uuid",
 ]
@@ -421,12 +439,27 @@ features = [
     "serde-human-readable",
 ]
 
-[dependencies.tokio]
+# net, time, io-util and sync were reaching dbsp through feature unification with actix-web; with
+# actix optional in feldera-types they have to be named.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio]
 version = "1.50.0"
 features = [
     "macros",
     "rt",
     "rt-multi-thread",
+    "net",
+    "time",
+    "io-util",
+    "sync",
+]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.tokio]
+version = "1.50.0"
+features = [
+    "macros",
+    "rt",
+    "sync",
+    "io-util",
 ]
 
 [dependencies.tokio-util]
@@ -453,6 +486,8 @@ features = ["xxh3"]
 
 [dependencies.zip]
 version = "6.0.0"
+default-features = false
+features = ["deflate"]
 
 [dev-dependencies.chrono]
 version = "0.4.43"
@@ -517,3 +552,7 @@ features = ["env-filter"]
 
 [dev-dependencies.zstd]
 version = "0.12.0"
+
+# wasm32 spike: std::time::Instant panics on wasm32-unknown-unknown; web-time reads performance.now().
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-time]
+version = "1.1"

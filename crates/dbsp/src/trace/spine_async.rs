@@ -69,8 +69,9 @@ use std::{
 };
 use std::{
     collections::BTreeMap,
-    time::{Duration, Instant},
+    time::Duration,
 };
+use crate::wasm_time::Instant;
 use std::{collections::VecDeque, sync::atomic::Ordering};
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -742,6 +743,11 @@ where
     async fn backpressure_wait(&self) {
         let start_time = Instant::now();
 
+        // wasm32 spike: nothing else can merge, so merge now rather than wait for a thread that
+        // does not exist.
+        #[cfg(target_arch = "wasm32")]
+        self.merge_workers.drain_inline();
+
         // Do an initial check of the batch count.  If it's already dropped,
         // exit early, otherwise save the name and the initial number of
         // batches for later recording.
@@ -1179,6 +1185,30 @@ where
         }
     }
 
+    /// wasm32 spike: there is no merger thread, so merging runs here, on the one thread, until the
+    /// spine has no merge work left. `start`'s once-per-level bit is cleared so the next batch can
+    /// run it again.
+    #[cfg(target_arch = "wasm32")]
+    fn run(self: Arc<Self>, level: usize) {
+        let mut merger = None;
+        let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger());
+        while self.merge_step(&mut merger, merger_type, level) {}
+        self.idle.notify_all();
+        self.no_backpressure.notify_waiters();
+        self.workers_started
+            .fetch_and(!(1u32 << level), Ordering::Relaxed);
+    }
+
+    /// wasm32 spike: merge every level synchronously until nothing is left to merge.
+    #[cfg(target_arch = "wasm32")]
+    fn drain_inline(self: &Arc<Self>) {
+        let levels = self.state.lock().unwrap().slots.len();
+        for level in 0..levels {
+            self.clone().run(level);
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn run(self: Arc<Self>, level: usize) {
         let local_worker_offset = self.worker_index - self.runtime.layout().local_workers().start;
         // The merger runtime may have been torn down already if a concurrent
@@ -2190,7 +2220,7 @@ where
         if effective_len <= max_level0_batch_size_records {
             return 0;
         }
-        match effective_len {
+        match effective_len as u64 {
             0..=99_999 => 1,
             100_000..=999_999 => 2,
             1_000_000..=9_999_999 => 3,

@@ -1597,7 +1597,7 @@ where
     let mut current_offset = 2;
 
     while current_offset < offsets.len() {
-        while offsets[current_offset] != SEPARATOR {
+        while offsets[current_offset] as usize != SEPARATOR as usize {
             unsafe { diff.deserialize_from_bytes(data, offsets[current_offset] as usize) };
             current_offset += 1;
             unsafe { val.deserialize_from_bytes(data, offsets[current_offset] as usize) };

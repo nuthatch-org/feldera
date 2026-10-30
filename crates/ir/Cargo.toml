@@ -72,3 +72,5 @@ features = [
 
 [dependencies.zip]
 version = "6.0.0"
+default-features = false
+features = ["deflate"]

@@ -28,6 +28,7 @@ pub mod fbuf;
 pub mod file;
 pub mod histogram;
 pub mod metrics;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod tokio;
 
 /// Helper function that appends to a [`PathBuf`].
@@ -431,4 +432,14 @@ pub enum StorageFileType {
 
     /// Something else.
     Other,
+}
+
+// wasm32 spike: one Instant for both targets.
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod wasm_time {
+    pub use web_time::Instant;
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod wasm_time {
+    pub use std::time::Instant;
 }

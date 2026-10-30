@@ -11,8 +11,9 @@ use hashbrown::HashMap;
 use std::{
     cell::RefCell,
     rc::Rc,
-    time::{Duration, Instant},
+    time::Duration,
 };
+use crate::wasm_time::Instant;
 
 /// Per-operator CPU profile.
 #[derive(Clone, Default, Debug)]

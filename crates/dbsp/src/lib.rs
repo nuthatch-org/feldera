@@ -77,6 +77,7 @@ pub mod typed_batch;
 pub mod circuit;
 pub mod algebra;
 pub mod ir;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod mimalloc;
 pub mod monitor;
 pub mod operator;
@@ -121,3 +122,13 @@ pub mod tutorial;
 
 // TODO: import from `circuit`.
 pub type Scope = u16;
+
+// wasm32 spike: one Instant for both targets.
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod wasm_time {
+    pub use web_time::Instant;
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod wasm_time {
+    pub use std::time::Instant;
+}

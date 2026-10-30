@@ -37,7 +37,7 @@ use smallvec::SmallVec;
 use snap::raw::{Decoder, decompress_len};
 use std::mem::replace;
 use std::ops::Index;
-use std::time::Instant;
+use crate::wasm_time::Instant;
 use std::{
     cmp::{
         Ordering::{self, *},
