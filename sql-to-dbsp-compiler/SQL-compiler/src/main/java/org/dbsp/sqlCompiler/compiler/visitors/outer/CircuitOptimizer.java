@@ -240,8 +240,10 @@ public class CircuitOptimizer extends Passes {
         // this.add(new TestSerialize(compiler));
         this.add(new CheckHints(compiler));
         this.add(new ComparatorDeclarations(compiler, new DeclareComparators(compiler)));
-        // Before the Merkle hashes, so that they hash the circuit the Gen-2 engine reads
-        this.add(new Conditional(compiler, new Gen2Passes(compiler), () -> options.ioOptions.gen2));
+        // Before the Merkle hashes, so that they hash the circuit the Gen-2 engine reads.  A
+        // harvest renders the circuit as Rust and applies these passes to its own copy of the IR.
+        this.add(new Conditional(compiler, new Gen2Passes(compiler),
+                () -> options.ioOptions.gen2 && !ExpressionOracleHarvest.isEnabled()));
         this.add(new CompactNames(compiler));
         this.add(new MerkleHashes(compiler));
         this.add(new TagRegions(compiler));

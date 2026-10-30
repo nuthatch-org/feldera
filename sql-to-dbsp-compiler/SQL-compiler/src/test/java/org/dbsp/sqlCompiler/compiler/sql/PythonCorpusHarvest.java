@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.junit.Assume;
 import org.junit.Test;
@@ -19,10 +20,23 @@ import java.util.stream.Stream;
  * <p>Driven by {@code PYTHON_CORPUS_SQL_DIR} (a directory of {@code .sql} files); the test is
  * skipped when that is unset, so a normal {@code mvn test} is unaffected. The harvest itself is
  * gated on {@code FELDERA_EXPR_ORACLE_DIR}. A file that fails to compile (a suite that expects an
- * error, or one using a construct the default compiler options reject) is skipped; the rest still
- * harvest.
+ * error, or one using a construct the pipeline-manager's options reject) is skipped; the rest
+ * still harvest.
  */
 public class PythonCorpusHarvest extends BaseSQLTests {
+    /** The options the pipeline-manager compiles a Gen2 pipeline with:
+     * {@code -i --alltables --ignoreOrder --gen2}. */
+    @Override
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
+        options.languageOptions.incrementalize = true;
+        options.languageOptions.generateInputForEveryTable = true;
+        options.languageOptions.ignoreOrderBy = true;
+        options.languageOptions.unrestrictedIOTypes = false;
+        options.ioOptions.gen2 = true;
+        return options;
+    }
+
     @Test
     public void harvestPythonCorpus() throws IOException {
         String dir = System.getenv("PYTHON_CORPUS_SQL_DIR");
